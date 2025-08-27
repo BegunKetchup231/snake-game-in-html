@@ -54,9 +54,16 @@
         </div>
         
         <div class="flex justify-center items-start space-x-4">
+            <!-- Contador de Bónus -->
+            <div id="bonusCounterContainer" class="flex flex-col items-center justify-center h-[400px] w-10 text-xs invisible">
+                <span class="text-lg">x3</span>
+                <div class="w-8 h-8 flex items-center justify-center rounded-full bg-purple-500 border-2 border-purple-300">
+                    <span id="bonusCharges" class="font-bold text-white">0</span>
+                </div>
+            </div>
             <canvas id="gameCanvas" width="400" height="400"></canvas>
             <!-- Barra de Multiplicador -->
-            <div class="flex flex-col items-center justify-between h-[400px] py-2 text-xs">
+            <div class="flex flex-col items-center justify-between h-[400px] py-2 text-xs w-10">
                 <span>2x</span>
                 <div class="w-6 h-full bg-gray-700 rounded-full overflow-hidden flex flex-col-reverse border-2 border-gray-600">
                     <div id="multiplierBarFill" class="w-full bg-green-500" style="height: 0%;"></div>
@@ -108,6 +115,8 @@
         const skinsContent = document.getElementById('skinsContent');
         const upgradesContent = document.getElementById('upgradesContent');
         const multiplierBarFill = document.getElementById('multiplierBarFill');
+        const bonusCounterContainer = document.getElementById('bonusCounterContainer');
+        const bonusChargesElement = document.getElementById('bonusCharges');
 
         const gridSize = 20;
         let maxFoods = 2;
@@ -117,6 +126,7 @@
         
         let runMultiplier = 1.0;
         let growthSinceMultiplierIncrease = 0;
+        let bonusCharges = 0;
         let obstacleSpawnTimer = null;
 
         const skins = [
@@ -129,7 +139,7 @@
         const upgradeData = {
             appleValue: { name: 'Maçã Nutritiva', desc: 'Ganha +1 maçã vermelha por coleta.', maxLevel: 10, cost: level => Math.floor(75 * Math.pow(1.8, level)), type: 'red' },
             maxApples: { name: 'Cesta Maior', desc: 'Aumenta o nº de maçãs no mapa.', maxLevel: 5, cost: level => Math.floor(200 * Math.pow(1.9, level)), type: 'red' },
-            magnetChance: { name: 'Sorte Magnética', desc: 'Aumenta a chance do Íman de 1% para 5%.', maxLevel: 1, cost: () => 200, type: 'golden' }
+            bonusChance: { name: 'Sorte Bónus', desc: 'Aumenta a chance da Maçã Bónus de 1% para 5%.', maxLevel: 1, cost: () => 200, type: 'golden' }
         };
 
         function startGame() {
@@ -137,8 +147,9 @@
             maxFoods = 2 + (upgrades.maxApples ? upgrades.maxApples.level : 0);
             snake = [ { x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 } ];
             dx = 0; dy = 0; sessionRedAppleCount = 0; isGameOver = false; changingDirection = false;
-            runMultiplier = 1.0; growthSinceMultiplierIncrease = 0;
+            runMultiplier = 1.0; growthSinceMultiplierIncrease = 0; bonusCharges = 0;
             updateMultiplierBar();
+            updateBonusCounterUI();
             gameOverMessage.classList.add('hidden'); shopMenu.classList.add('hidden');
             foods = []; obstacles = [];
             
@@ -209,43 +220,36 @@
 
         function handleFoodConsumption(foodIndex) {
             const food = foods[foodIndex];
+            foods.splice(foodIndex, 1);
             
-            if (food.type === 'magnet') {
-                const otherFoods = foods.filter((f, index) => index !== foodIndex);
-                foods.length = 0;
-                
-                otherFoods.forEach(f => {
-                    snake.push({ ...snake[snake.length - 1] });
-                    consume(f, true);
-                });
+            if (food.type !== 'shrink') {
                 snake.push({ ...snake[snake.length - 1] });
-                consume(food, false);
-            } else {
-                foods.splice(foodIndex, 1);
-                if (food.type !== 'shrink') {
-                    snake.push({ ...snake[snake.length - 1] });
-                }
-                consume(food, false);
             }
+            consume(food);
             
             while (foods.length < maxFoods) {
                 spawnNewFood();
             }
         }
 
-        function consume(food, isMagnetized = false) {
+        function consume(food) {
             growthSinceMultiplierIncrease++;
-            const magnetMultiplier = isMagnetized ? 3 : 1;
+            let bonusMultiplier = 1;
+            if (bonusCharges > 0) {
+                bonusMultiplier = 3;
+                bonusCharges--;
+                updateBonusCounterUI();
+            }
 
             switch(food.type) {
                 case 'red':
-                    let value = (1 + (upgrades.appleValue ? upgrades.appleValue.level : 0)) * runMultiplier * magnetMultiplier;
+                    let value = (1 + (upgrades.appleValue ? upgrades.appleValue.level : 0)) * runMultiplier * bonusMultiplier;
                     sessionRedAppleCount++;
                     totalRedApples += value;
                     saveRedApples();
                     break;
                 case 'golden':
-                    totalGoldenPoints += (1 * magnetMultiplier);
+                    totalGoldenPoints += (1 * bonusMultiplier);
                     saveGoldenPoints();
                     break;
                 case 'shrink':
@@ -254,6 +258,10 @@
                         const toRemove = Math.min(3, snake.length - 3);
                         for(let i=0; i<toRemove; i++) snake.pop();
                     }
+                    break;
+                case 'bonus':
+                    bonusCharges += 3;
+                    updateBonusCounterUI();
                     break;
             }
             if (growthSinceMultiplierIncrease >= 3) {
@@ -270,14 +278,23 @@
             multiplierBarFill.style.height = `${percentage}%`;
         }
 
+        function updateBonusCounterUI() {
+            if (bonusCharges > 0) {
+                bonusChargesElement.textContent = bonusCharges;
+                bonusCounterContainer.classList.remove('invisible');
+            } else {
+                bonusCounterContainer.classList.add('invisible');
+            }
+        }
+
         function spawnNewFood() {
             let newFood = {};
             const chance = Math.random();
-            const magnetChance = (upgrades.magnetChance && upgrades.magnetChance.level > 0) ? 0.05 : 0.01;
+            const bonusChance = (upgrades.bonusChance && upgrades.bonusChance.level > 0) ? 0.05 : 0.01;
 
-            if (chance < magnetChance) newFood.type = 'magnet';
-            else if (chance < magnetChance + 0.03) newFood.type = 'shrink';
-            else if (chance < magnetChance + 0.03 + 0.1) newFood.type = 'golden';
+            if (chance < bonusChance) newFood.type = 'bonus';
+            else if (chance < bonusChance + 0.03) newFood.type = 'shrink';
+            else if (chance < bonusChance + 0.03 + 0.1) newFood.type = 'golden';
             else newFood.type = 'red';
 
             while (true) {
@@ -289,13 +306,13 @@
         }
 
         function drawFoods() { 
-            const colorMap = { red: '#e53e3e', golden: '#f6e05e', shrink: '#d6bcfa', magnet: '#fefcbf' };
+            const colorMap = { red: '#e53e3e', golden: '#f6e05e', shrink: '#d6bcfa', bonus: '#fefcbf' };
             foods.forEach(f => drawApple(f, colorMap[f.type])); 
         }
         function drawApple(food, color) {
             const x = food.x * gridSize, y = food.y * gridSize, radius = gridSize / 2;
             ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x + radius, y + radius, radius - 2, 0, 2 * Math.PI); ctx.fill();
-            if (food.type !== 'magnet') {
+            if (food.type !== 'bonus') {
                 ctx.fillStyle = '#48bb78'; ctx.beginPath(); ctx.moveTo(x + radius, y); ctx.lineTo(x + radius + 4, y + 4); ctx.lineTo(x + radius + 8, y + 2); ctx.fill();
             }
         }
