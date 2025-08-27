@@ -201,6 +201,7 @@
                 if (head.x === foods[i].x && head.y === foods[i].y) {
                     handleFoodConsumption(i);
                     ateFood = true;
+                    break;
                 }
             }
             if (!ateFood) snake.pop();
@@ -210,19 +211,21 @@
             const food = foods[foodIndex];
             
             if (food.type === 'magnet') {
-                foods.splice(foodIndex, 1);
-                const otherFoods = [...foods];
-                foods = [];
+                const otherFoods = foods.filter((f, index) => index !== foodIndex);
+                foods.length = 0;
+                
                 otherFoods.forEach(f => {
                     snake.push({ ...snake[snake.length - 1] });
-                    consume(f);
+                    consume(f, true);
                 });
+                snake.push({ ...snake[snake.length - 1] });
+                consume(food, false);
             } else {
                 foods.splice(foodIndex, 1);
                 if (food.type !== 'shrink') {
                     snake.push({ ...snake[snake.length - 1] });
                 }
-                consume(food);
+                consume(food, false);
             }
             
             while (foods.length < maxFoods) {
@@ -230,21 +233,23 @@
             }
         }
 
-        function consume(food) {
+        function consume(food, isMagnetized = false) {
             growthSinceMultiplierIncrease++;
+            const magnetMultiplier = isMagnetized ? 3 : 1;
+
             switch(food.type) {
                 case 'red':
-                    let value = (1 + (upgrades.appleValue ? upgrades.appleValue.level : 0)) * runMultiplier;
+                    let value = (1 + (upgrades.appleValue ? upgrades.appleValue.level : 0)) * runMultiplier * magnetMultiplier;
                     sessionRedAppleCount++;
                     totalRedApples += value;
                     saveRedApples();
                     break;
                 case 'golden':
-                    totalGoldenPoints++;
+                    totalGoldenPoints += (1 * magnetMultiplier);
                     saveGoldenPoints();
                     break;
                 case 'shrink':
-                    growthSinceMultiplierIncrease--; // Shrinking doesn't count as growth
+                    growthSinceMultiplierIncrease--;
                     if (snake.length > 3) {
                         const toRemove = Math.min(3, snake.length - 3);
                         for(let i=0; i<toRemove; i++) snake.pop();
@@ -329,8 +334,8 @@
             }
             obstacles.push(obstacle);
 
-            setTimeout(() => { obstacle.state = 'yellow'; }, 4000);
-            setTimeout(() => { obstacle.state = 'red'; }, 7000);
+            setTimeout(() => { if(obstacle) obstacle.state = 'yellow'; }, 4000);
+            setTimeout(() => { if(obstacle) obstacle.state = 'red'; }, 7000);
             setTimeout(() => {
                 const idx = obstacles.indexOf(obstacle);
                 if (idx > -1) obstacles.splice(idx, 1);
