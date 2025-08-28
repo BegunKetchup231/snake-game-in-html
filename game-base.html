@@ -35,6 +35,12 @@
         .tab-btn.active {
             border-bottom-color: #f6e05e;
         }
+        .progress-bar-bg {
+            background-color: #4a5568;
+        }
+        .progress-bar-fill {
+            background-color: #f6e05e;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
@@ -54,15 +60,13 @@
         </div>
         
         <div class="flex justify-center items-start space-x-4">
-            <!-- Contador de Bónus -->
-            <div id="bonusCounterContainer" class="flex flex-col items-center justify-center h-[400px] w-10 text-xs invisible">
+            <div id="bonusCounterContainer" class="flex flex-col items-center justify-center h-[400px] w-10 text-xs transition-opacity duration-300">
                 <span class="text-lg">x3</span>
                 <div class="w-8 h-8 flex items-center justify-center rounded-full bg-purple-500 border-2 border-purple-300">
                     <span id="bonusCharges" class="font-bold text-white">0</span>
                 </div>
             </div>
             <canvas id="gameCanvas" width="400" height="400"></canvas>
-            <!-- Barra de Multiplicador -->
             <div class="flex flex-col items-center justify-between h-[400px] py-2 text-xs w-10">
                 <span>2x</span>
                 <div class="w-6 h-full bg-gray-700 rounded-full overflow-hidden flex flex-col-reverse border-2 border-gray-600">
@@ -71,7 +75,6 @@
                  <span>1x</span>
             </div>
         </div>
-
 
         <div id="gameOverMessage" class="hidden absolute inset-0 bg-black bg-opacity-70 flex flex-col justify-center items-center text-center p-4">
             <h2 class="text-3xl sm:text-5xl text-red-500 font-bold">FIM DE JOGO</h2>
@@ -82,11 +85,13 @@
 
         <div id="shopMenu" class="hidden absolute inset-0 bg-gray-900 bg-opacity-95 flex flex-col justify-start items-center text-center p-4">
             <div class="w-full flex justify-center border-b-2 border-gray-700 mb-4">
-                <button id="skinsTabButton" class="tab-btn text-xl font-bold p-2 w-1/2">SKINS</button>
-                <button id="upgradesTabButton" class="tab-btn text-xl font-bold p-2 w-1/2">UPGRADES</button>
+                <button id="skinsTabButton" class="tab-btn text-xl font-bold p-2 w-1/3">SKINS</button>
+                <button id="upgradesTabButton" class="tab-btn text-xl font-bold p-2 w-1/3">UPGRADES</button>
+                <button id="achievementsTabButton" class="tab-btn text-xl font-bold p-2 w-1/3">CONQUISTAS</button>
             </div>
             <div id="skinsContent" class="w-full space-y-3 overflow-y-auto max-h-64"></div>
             <div id="upgradesContent" class="hidden w-full space-y-3 overflow-y-auto max-h-64"></div>
+            <div id="achievementsContent" class="hidden w-full space-y-3 overflow-y-auto max-h-64"></div>
             <button id="backToGameOverButton" class="mt-auto bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md">VOLTAR</button>
         </div>
     </div>
@@ -112,8 +117,10 @@
         const backToGameOverButton = document.getElementById('backToGameOverButton');
         const skinsTabButton = document.getElementById('skinsTabButton');
         const upgradesTabButton = document.getElementById('upgradesTabButton');
+        const achievementsTabButton = document.getElementById('achievementsTabButton');
         const skinsContent = document.getElementById('skinsContent');
         const upgradesContent = document.getElementById('upgradesContent');
+        const achievementsContent = document.getElementById('achievementsContent');
         const multiplierBarFill = document.getElementById('multiplierBarFill');
         const bonusCounterContainer = document.getElementById('bonusCounterContainer');
         const bonusChargesElement = document.getElementById('bonusCharges');
@@ -122,18 +129,20 @@
         let maxFoods = 2;
         let snake = [], foods = [], obstacles = [];
         let dx = 0, dy = 0, sessionRedAppleCount = 0, totalRedApples = 0, totalGoldenPoints = 0;
-        let changingDirection = false, gameLoop, isGameOver = false, currentSkin, upgrades = {};
+        let changingDirection = false, gameLoop, isGameOver = false, currentSkin, upgrades = {}, stats = {};
         
         let runMultiplier = 1.0;
         let growthSinceMultiplierIncrease = 0;
         let bonusCharges = 0;
+        let obstaclesSurvivedInRun = 0;
         let obstacleSpawnTimer = null;
 
         const skins = [
             { id: 'green', name: 'Verde Clássico', head: '#48bb78', body: '#38a169', cost: 0 },
             { id: 'blue', name: 'Azul Elétrico', head: '#4299e1', body: '#3182ce', cost: 10 },
             { id: 'purple', name: 'Roxo Real', head: '#9f7aea', body: '#805ad5', cost: 100 },
-            { id: 'orange', name: 'Laranja Atômico', head: '#f6ad55', body: '#ed8936', cost: 1000 }
+            { id: 'orange', name: 'Laranja Atômico', head: '#f6ad55', body: '#ed8936', cost: 1000 },
+            { id: 'rainbow', name: 'Arco-Íris Mítico', head: 'red', body: 'orange', cost: -1 }
         ];
 
         const upgradeData = {
@@ -141,13 +150,23 @@
             maxApples: { name: 'Cesta Maior', desc: 'Aumenta o nº de maçãs no mapa.', maxLevel: 5, cost: level => Math.floor(200 * Math.pow(1.9, level)), type: 'red' },
             bonusChance: { name: 'Sorte Bónus', desc: 'Aumenta a chance da Maçã Bónus de 1% para 5%.', maxLevel: 1, cost: () => 200, type: 'golden' }
         };
+        
+        const achievementsData = {
+            red500: { name: 'Novato', desc: 'Colete 500 maçãs vermelhas.', goal: 500, reward: 25, check: () => stats.totalRedApples || 0 },
+            gold100: { name: 'Rei Midas', desc: 'Colete 100 maçãs douradas.', goal: 100, reward: 50, check: () => stats.totalGoldenPoints || 0 },
+            size50: { name: 'Comilão', desc: 'Alcance um tamanho de 50.', goal: 50, reward: 75, check: () => stats.maxSnakeSize || 0 },
+            survive5: { name: 'Estrategista', desc: 'Sobreviva a 5 obstáculos.', goal: 5, reward: 100, check: () => stats.totalObstaclesSurvived || 0 },
+            allSkins: { name: 'Mestre das Skins', desc: 'Compre todas as skins.', goal: skins.filter(s => s.cost > 0).length, reward: 150, check: () => (JSON.parse(localStorage.getItem('snakePurchasedSkins')) || ['green']).length - 1 }
+        };
+        achievementsData.allAchievements = { name: 'Colecionador Supremo', desc: 'Desbloqueie todas as conquistas.', goal: Object.keys(achievementsData).length, reward: 0, check: () => (JSON.parse(localStorage.getItem('snakeClaimedAchievements')) || []).length };
+
 
         function startGame() {
             loadSavedData();
             maxFoods = 2 + (upgrades.maxApples ? upgrades.maxApples.level : 0);
             snake = [ { x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 } ];
             dx = 0; dy = 0; sessionRedAppleCount = 0; isGameOver = false; changingDirection = false;
-            runMultiplier = 1.0; growthSinceMultiplierIncrease = 0; bonusCharges = 0;
+            runMultiplier = 1.0; growthSinceMultiplierIncrease = 0; bonusCharges = 0; obstaclesSurvivedInRun = 0;
             updateMultiplierBar();
             updateBonusCounterUI();
             gameOverMessage.classList.add('hidden'); shopMenu.classList.add('hidden');
@@ -235,7 +254,7 @@
         function consume(food) {
             growthSinceMultiplierIncrease++;
             let bonusMultiplier = 1;
-            if (bonusCharges > 0) {
+            if (bonusCharges > 0 && food.type !== 'bonus') {
                 bonusMultiplier = 3;
                 bonusCharges--;
                 updateBonusCounterUI();
@@ -279,11 +298,11 @@
         }
 
         function updateBonusCounterUI() {
+            bonusChargesElement.textContent = bonusCharges;
             if (bonusCharges > 0) {
-                bonusChargesElement.textContent = bonusCharges;
-                bonusCounterContainer.classList.remove('invisible');
+                bonusCounterContainer.style.opacity = '1';
             } else {
-                bonusCounterContainer.classList.add('invisible');
+                bonusCounterContainer.style.opacity = '0.2';
             }
         }
 
@@ -355,7 +374,10 @@
             setTimeout(() => { if(obstacle) obstacle.state = 'red'; }, 7000);
             setTimeout(() => {
                 const idx = obstacles.indexOf(obstacle);
-                if (idx > -1) obstacles.splice(idx, 1);
+                if (idx > -1) {
+                    obstacles.splice(idx, 1);
+                    obstaclesSurvivedInRun++;
+                }
             }, 17000);
         }
 
@@ -378,6 +400,13 @@
             });
         }
 
+        function saveStats() {
+            stats.totalRedApples = totalRedApples;
+            stats.totalGoldenPoints = totalGoldenPoints;
+            stats.maxSnakeSize = Math.max(stats.maxSnakeSize || 0, snake.length);
+            stats.totalObstaclesSurvived = (stats.totalObstaclesSurvived || 0) + obstaclesSurvivedInRun;
+            localStorage.setItem('snakeStats', JSON.stringify(stats));
+        }
         function saveRedApples() { localStorage.setItem('snakeRedApples', totalRedApples); totalRedAppleScoreElement.textContent = totalRedApples.toFixed(1); }
         function saveGoldenPoints() { localStorage.setItem('snakeGoldenPoints', totalGoldenPoints); goldenScoreElement.textContent = totalGoldenPoints; }
         function saveUpgrades() { localStorage.setItem('snakeUpgrades', JSON.stringify(upgrades)); }
@@ -390,6 +419,7 @@
             const equippedSkinId = localStorage.getItem('snakeEquippedSkin') || 'green';
             currentSkin = skins.find(s => s.id === equippedSkinId);
             upgrades = JSON.parse(localStorage.getItem('snakeUpgrades')) || {};
+            stats = JSON.parse(localStorage.getItem('snakeStats')) || {};
         }
 
         function populateShopSkins() {
@@ -397,9 +427,15 @@
             const purchasedSkins = JSON.parse(localStorage.getItem('snakePurchasedSkins')) || ['green'];
             const equippedSkinId = localStorage.getItem('snakeEquippedSkin') || 'green';
             skins.forEach(skin => {
+                if (skin.cost === -1 && !purchasedSkins.includes(skin.id)) return;
                 const isPurchased = purchasedSkins.includes(skin.id), isEquipped = skin.id === equippedSkinId;
                 const itemDiv = document.createElement('div'); itemDiv.className = 'flex items-center justify-between bg-gray-800 p-2 rounded-lg';
-                const previewDiv = document.createElement('div'); previewDiv.className = 'shop-item-preview'; previewDiv.style.backgroundColor = skin.head; previewDiv.style.border = `3px solid ${skin.body}`;
+                const previewDiv = document.createElement('div'); previewDiv.className = 'shop-item-preview'; 
+                if (skin.id === 'rainbow') {
+                    previewDiv.style.background = 'linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet)';
+                } else {
+                    previewDiv.style.backgroundColor = skin.head; previewDiv.style.border = `3px solid ${skin.body}`;
+                }
                 const nameSpan = document.createElement('span'); nameSpan.textContent = skin.name; nameSpan.className = 'text-xs';
                 const button = document.createElement('button'); button.className = 'shop-btn text-xs font-bold py-2 px-3 rounded-md';
                 if (isEquipped) { button.textContent = 'EQUIPADO'; button.disabled = true; button.className += ' bg-gray-500'; } 
@@ -450,6 +486,54 @@
                 itemDiv.append(infoDiv, button); upgradesContent.appendChild(itemDiv);
             });
         }
+        
+        function populateAchievements() {
+            achievementsContent.innerHTML = '';
+            const claimed = JSON.parse(localStorage.getItem('snakeClaimedAchievements')) || [];
+            Object.keys(achievementsData).forEach(key => {
+                const ach = achievementsData[key];
+                const currentProgress = ach.check();
+                const isComplete = currentProgress >= ach.goal;
+                const isClaimed = claimed.includes(key);
+
+                const itemDiv = document.createElement('div'); itemDiv.className = 'flex flex-col bg-gray-800 p-2 rounded-lg text-left';
+                const topDiv = document.createElement('div'); topDiv.className = 'flex items-center justify-between';
+                const infoDiv = document.createElement('div'); infoDiv.className = 'flex flex-col';
+                const nameSpan = document.createElement('span'); nameSpan.textContent = ach.name;
+                const descSpan = document.createElement('span'); descSpan.className = 'text-xs text-gray-400'; descSpan.textContent = ach.desc;
+                infoDiv.append(nameSpan, descSpan);
+                const button = document.createElement('button'); button.className = 'shop-btn text-xs font-bold py-2 px-3 rounded-md';
+                if(isClaimed) {
+                    button.textContent = 'CONCLUÍDO'; button.disabled = true; button.className += ' bg-gray-500';
+                } else if (isComplete) {
+                    button.innerHTML = `COLETAR <span class="text-yellow-300">${ach.reward}</span>`;
+                    button.className += ' bg-green-500 hover:bg-green-600';
+                    button.onclick = () => {
+                        totalGoldenPoints += ach.reward;
+                        saveGoldenPoints();
+                        claimed.push(key);
+                        localStorage.setItem('snakeClaimedAchievements', JSON.stringify(claimed));
+                        if(key === 'allAchievements') {
+                            let purchased = JSON.parse(localStorage.getItem('snakePurchasedSkins')) || ['green'];
+                            if (!purchased.includes('rainbow')) {
+                                purchased.push('rainbow');
+                                localStorage.setItem('snakePurchasedSkins', JSON.stringify(purchased));
+                            }
+                        }
+                        populateAchievements();
+                    };
+                } else {
+                    button.textContent = 'EM CURSO'; button.disabled = true; button.className += ' bg-gray-600 opacity-50';
+                }
+                topDiv.append(infoDiv, button);
+                const progressContainer = document.createElement('div'); progressContainer.className = 'w-full progress-bar-bg rounded-full h-2.5 mt-2';
+                const progressBar = document.createElement('div'); progressBar.className = 'progress-bar-fill h-2.5 rounded-full';
+                progressBar.style.width = `${Math.min(100, (currentProgress / ach.goal) * 100)}%`;
+                progressContainer.appendChild(progressBar);
+                itemDiv.append(topDiv, progressContainer);
+                achievementsContent.appendChild(itemDiv);
+            });
+        }
 
         function checkCollision() {
             if (dx === 0 && dy === 0) return;
@@ -466,7 +550,7 @@
             }
         }
 
-        function gameOver() { isGameOver = true; clearInterval(gameLoop); clearInterval(obstacleSpawnTimer); finalScoreElement.textContent = sessionRedAppleCount; gameOverMessage.classList.remove('hidden'); }
+        function gameOver() { isGameOver = true; clearInterval(gameLoop); clearInterval(obstacleSpawnTimer); finalScoreElement.textContent = sessionRedAppleCount; saveStats(); gameOverMessage.classList.remove('hidden'); }
 
         function changeDirection(event) {
             if (changingDirection) return;
@@ -520,14 +604,19 @@
         shopButton.addEventListener('click', () => { gameOverMessage.classList.add('hidden'); skinsTabButton.click(); shopMenu.classList.remove('hidden'); });
         backToGameOverButton.addEventListener('click', () => { shopMenu.classList.add('hidden'); gameOverMessage.classList.remove('hidden'); });
         skinsTabButton.addEventListener('click', () => {
-            skinsTabButton.classList.add('active'); upgradesTabButton.classList.remove('active');
-            skinsContent.classList.remove('hidden'); upgradesContent.classList.add('hidden');
+            skinsTabButton.classList.add('active'); upgradesTabButton.classList.remove('active'); achievementsTabButton.classList.remove('active');
+            skinsContent.classList.remove('hidden'); upgradesContent.classList.add('hidden'); achievementsContent.classList.add('hidden');
             populateShopSkins();
         });
         upgradesTabButton.addEventListener('click', () => {
-            upgradesTabButton.classList.add('active'); skinsTabButton.classList.remove('active');
-            upgradesContent.classList.remove('hidden'); skinsContent.classList.add('hidden');
+            upgradesTabButton.classList.add('active'); skinsTabButton.classList.remove('active'); achievementsTabButton.classList.remove('active');
+            upgradesContent.classList.remove('hidden'); skinsContent.classList.add('hidden'); achievementsContent.classList.add('hidden');
             populateUpgrades();
+        });
+        achievementsTabButton.addEventListener('click', () => {
+            achievementsTabButton.classList.add('active'); skinsTabButton.classList.remove('active'); upgradesTabButton.classList.remove('active');
+            achievementsContent.classList.remove('hidden'); skinsContent.classList.add('hidden'); upgradesContent.classList.add('hidden');
+            populateAchievements();
         });
         
         document.addEventListener('keydown', changeDirection);
